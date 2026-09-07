@@ -92,13 +92,17 @@ struct DashboardView: View {
                 transport(controller.isPaused ? "play.fill" : "pause.fill", controller.isPaused ? "再生" : "一時停止",
                           enabled: controller.hasVideo) { await controller.togglePlayback() }
                 transport("forward.end.fill", "次の動画", enabled: controller.canNext) { await controller.next() }
+                Toggle(isOn: Binding(
+                    get: { controller.isRepeating }, set: { controller.setRepeating($0) }
+                )) {
+                    Image(systemName: "repeat").frame(width: Spacing.panel, height: Spacing.panel)
+                }
+                .toggleStyle(.button)
+                .tint(.accentColor)
+                .accessibilityLabel("この動画をリピート")
+                .help("この動画をリピート（広告・ライブ配信を除く）")
                 Spacer()
             }
-            Toggle("この動画をリピート", isOn: Binding(
-                get: { controller.isRepeating }, set: { controller.setRepeating($0) }
-            ))
-            .toggleStyle(.switch)
-            .help("現在の動画を繰り返します。広告・ライブ配信は対象外です。")
             HStack(spacing: Spacing.gap) {
                 TrackArtwork(track: controller.nextTrack, width: Spacing.panel * 5)
                 VStack(alignment: .leading, spacing: Spacing.gap) {
