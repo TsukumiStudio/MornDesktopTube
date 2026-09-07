@@ -3,7 +3,7 @@ enum PlayerScript {
     static let source = #"""
     (() => {
       if (!['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(location.hostname)) return;
-      const settings = { volume: 0, background: false };
+      const settings = { volume: 0, background: false, repeatVideo: false };
       const video = () => document.querySelector('#movie_player video, video');
       const player = () => document.querySelector('#movie_player');
       const validID = id => typeof id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(id);
@@ -59,6 +59,13 @@ enum PlayerScript {
         }
       `;
       document.documentElement.appendChild(style);
+      function applyRepeat() {
+        const v = video();
+        if (!v) return;
+        const shouldLoop = settings.repeatVideo && !player()?.classList.contains('ad-showing')
+          && !player()?.getVideoData?.()?.isLive && Number.isFinite(v.duration) && v.duration > 0;
+        if (v.loop !== shouldLoop) v.loop = shouldLoop;
+      }
       function apply() {
         document.documentElement.dataset.mdtBackground = String(settings.background);
         const v = video();
@@ -67,6 +74,7 @@ enum PlayerScript {
           if (v.muted !== (settings.volume === 0)) v.muted = settings.volume === 0;
         }
         configuredVideo = v;
+        applyRepeat();
       }
       window.mornDesktopTube = {
         configure(next) { Object.assign(settings, next); apply(); return this.state(); },
@@ -111,8 +119,13 @@ enum PlayerScript {
         }
       };
       document.addEventListener('loadedmetadata', apply, true);
+      document.addEventListener('durationchange', applyRepeat, true);
       document.addEventListener('volumechange', apply, true);
       document.addEventListener('yt-navigate-finish', apply);
+      // Keep working when the dashboard is closed and YouTube replaces its player or starts an ad.
+      new MutationObserver(applyRepeat).observe(document.documentElement, {
+        subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'loop']
+      });
     })();
     """#
 }

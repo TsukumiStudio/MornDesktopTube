@@ -11,6 +11,8 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     @Published private(set) var status = "アプリ内のYouTubeで動画を選んでください。"
     @Published private(set) var pageAddress = ""
     @Published private(set) var volume = 50.0
+    @Published private(set) var isRepeating: Bool
+    private let preferences: UserDefaults
     @Published private(set) var currentTrack: VideoTrack?
     @Published private(set) var nextTrack: VideoTrack?
     @Published private(set) var currentTime = 0.0
@@ -31,7 +33,9 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     private var settingsRevision = 0
     private var presentationRevision = 0
 
-    init(dataStore: WKWebsiteDataStore? = nil) {
+    init(dataStore: WKWebsiteDataStore? = nil, preferences: UserDefaults = .standard) {
+        self.preferences = preferences
+        isRepeating = preferences.bool(forKey: "repeatVideo")
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore ?? .default()
         configuration.applicationNameForUserAgent = "MornDesktopTube/0.2"
@@ -132,6 +136,12 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
         configurePlayer()
     }
 
+    func setRepeating(_ enabled: Bool) {
+        isRepeating = enabled
+        preferences.set(enabled, forKey: "repeatVideo")
+        configurePlayer()
+    }
+
     func togglePlayback() async {
         await performPlayerAction("return await window.mornDesktopTube.togglePlayback()")
     }
@@ -189,7 +199,7 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
         settingsRevision += 1
         let current = settingsRevision
         guard webView.url != nil else { return }
-        let script = "window.mornDesktopTube?.configure({volume: \(volume / 100), background: \(isWallpaper)}) ?? null"
+        let script = "window.mornDesktopTube?.configure({volume: \(volume / 100), background: \(isWallpaper), repeatVideo: \(isRepeating)}) ?? null"
         webView.evaluateJavaScript(script) { [weak self] result, _ in
             guard let self, current == self.settingsRevision else { return }
             self.updatePlayback(result)

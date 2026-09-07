@@ -5,6 +5,86 @@ import WebKit
 
 final class PlayerTests: XCTestCase {
     @MainActor
+    func testRepeatPlaybackAndPersistence() async throws {
+        _ = NSApplication.shared
+        let suite = "MornDesktopTube.repeat-test.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { preferences.removePersistentDomain(forName: suite) }
+        var original: PlayerController? = PlayerController(dataStore: .nonPersistent(), preferences: preferences)
+        XCTAssertFalse(try XCTUnwrap(original).isRepeating)
+        original?.setRepeating(true)
+        original = nil
+        let controller = PlayerController(dataStore: .nonPersistent(), preferences: preferences)
+        XCTAssertTrue(controller.isRepeating, "Repeat must survive controller recreation")
+        controller.setVolume(0)
+        let webView = controller.webView
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = controller.browserContainer
+        window.orderBack(nil)
+        defer { window.close() }
+        let fixture = try Data(contentsOf: XCTUnwrap(Bundle.module.url(forResource: "blue", withExtension: "mp4", subdirectory: "Fixtures")))
+        webView.loadHTMLString("""
+            <div id="movie_player"><video muted playsinline src="data:video/mp4;base64,\(fixture.base64EncodedString())"></video></div>
+            <script>window.live = false; document.querySelector('#movie_player').getVideoData = () =>
+                ({video_id: 'current0001', title: 'Repeat test', isLive: window.live});</script>
+            """, baseURL: URL(string: "https://www.youtube.com/"))
+        for _ in 0..<100 {
+            if (try? await webView.evaluateJavaScript("document.querySelector('video').readyState >= 2 && document.querySelector('video').loop")) as? Bool == true { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        func flag(_ expression: String) async throws -> Bool {
+            try await webView.evaluateJavaScript(expression) as? Bool == true
+        }
+        let initialLoop = try await flag("document.querySelector('video').loop")
+        XCTAssertTrue(initialLoop)
+        // Observe real end-to-start playback, without DashboardView or refreshPlayback polling.
+        for _ in 0..<2 {
+            _ = try await webView.callAsyncJavaScript("""
+                const v = document.querySelector('video');
+                v.currentTime = v.duration - 0.1;
+                await v.play();
+                """, arguments: [:], in: nil, contentWorld: .page)
+            try await Task.sleep(for: .milliseconds(600))
+            let repeated = try await flag("!document.querySelector('video').paused && document.querySelector('video').currentTime < 1")
+            XCTAssertTrue(repeated, "Playback must actually return to the beginning")
+        }
+        _ = try await webView.evaluateJavaScript("document.querySelector('#movie_player').classList.add('ad-showing')")
+        let adLoops = try await flag("document.querySelector('video').loop")
+        XCTAssertFalse(adLoops, "Ads must not repeat")
+        _ = try await webView.evaluateJavaScript("document.querySelector('#movie_player').classList.remove('ad-showing')")
+        let restored = try await flag("document.querySelector('video').loop")
+        XCTAssertTrue(restored)
+        _ = try await webView.evaluateJavaScript("window.live = true; document.querySelector('video').dispatchEvent(new Event('durationchange'))")
+        let liveLoops = try await flag("document.querySelector('video').loop")
+        XCTAssertFalse(liveLoops)
+        _ = try await webView.evaluateJavaScript("window.live = false; document.querySelector('video').dispatchEvent(new Event('durationchange'))")
+        await controller.stop()
+        let paused = try await flag("document.querySelector('video').paused")
+        XCTAssertTrue(paused, "Repeat must not restart a stopped video")
+        controller.setRepeating(false)
+        _ = try await webView.callAsyncJavaScript("""
+            const v = document.querySelector('video'); v.currentTime = v.duration - 0.1; await v.play();
+            """, arguments: [:], in: nil, contentWorld: .page)
+        try await Task.sleep(for: .milliseconds(600))
+        let ended = try await flag("document.querySelector('video').ended")
+        XCTAssertTrue(ended, "Turning repeat off must restore normal playback completion")
+        XCTAssertFalse(PlayerController(dataStore: .nonPersistent(), preferences: preferences).isRepeating)
+        controller.setRepeating(true)
+        _ = try await webView.evaluateJavaScript("""
+            const old = document.querySelector('video'); const replacement = old.cloneNode(true);
+            replacement.removeAttribute('loop'); old.replaceWith(replacement);
+            """)
+        for _ in 0..<100 {
+            if try await flag("document.querySelector('video').loop") { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let replacementLoops = try await flag("document.querySelector('video').loop")
+        XCTAssertTrue(replacementLoops, "Replacement videos must inherit repeat without dashboard polling")
+    }
+
+    @MainActor
     func testDashboardSizeIsStableAcrossUpdateStates() {
         _ = NSApplication.shared
         let controller = PlayerController(dataStore: .nonPersistent())
