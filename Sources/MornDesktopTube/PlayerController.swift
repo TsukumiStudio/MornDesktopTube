@@ -43,7 +43,7 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.preferences.isElementFullscreenEnabled = false
         configuration.userContentController.addUserScript(WKUserScript(
-            source: PlayerScript.source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+            source: PlayerScript.source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         let messages = PlaybackMessages()
@@ -214,8 +214,15 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     private func configurePlayer() {
         settingsRevision += 1
         let current = settingsRevision
+        let settings = "{volume: \(volume / 100), background: \(isWallpaper), repeatVideo: \(isRepeating)}"
+        // Carry presentation settings into the next document before its first paint.
+        let scripts = webView.configuration.userContentController
+        scripts.removeAllUserScripts()
+        scripts.addUserScript(WKUserScript(
+            source: "window.mornDesktopTubeSettings = \(settings);\n" + PlayerScript.source,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         guard webView.url != nil else { return }
-        let script = "window.mornDesktopTube?.configure({volume: \(volume / 100), background: \(isWallpaper), repeatVideo: \(isRepeating)}) ?? null"
+        let script = "window.mornDesktopTube?.configure(\(settings)) ?? null"
         webView.evaluateJavaScript(script) { [weak self] result, _ in
             guard let self, current == self.settingsRevision else { return }
             self.updatePlayback(result)

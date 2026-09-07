@@ -5,6 +5,92 @@ import WebKit
 
 final class PlayerTests: XCTestCase {
     @MainActor
+    func testBackgroundTransitionWithoutCountdownOrControls() async throws {
+        _ = NSApplication.shared
+        let suite = "MornDesktopTube.transition-test.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let controller = PlayerController(dataStore: .nonPersistent(), preferences: preferences)
+        controller.setVolume(0)
+        let web = controller.webView
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = controller.browserContainer
+        window.orderBack(nil)
+        defer { window.close(); controller.wallpaper?.close() }
+        let fixture = try Data(contentsOf: XCTUnwrap(Bundle.module.url(forResource: "blue", withExtension: "mp4", subdirectory: "Fixtures")))
+        let html = """
+            <div id="movie_player">
+              <video muted playsinline src="data:video/mp4;base64,\(fixture.base64EncodedString())"></video>
+              <div class="ytp-chrome-bottom">Seek bar</div>
+              <div class="ytp-autonav-endscreen">Next in 3 seconds</div>
+              <button class="ytp-next-button" onclick="window.nextCount++">Next</button>
+            </div>
+            <script>
+              window.nextCount = 0; window.countdowns = 0;
+              window.initialControls = getComputedStyle(document.querySelector('.ytp-chrome-bottom')).display;
+              document.querySelector('#movie_player').getVideoData = () => ({video_id:'current0001', isLive: window.live});
+              document.querySelector('video').addEventListener('ended', () => window.countdowns++);
+            </script>
+            """
+        func load() async throws {
+            web.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com/watch?v=current0001"))
+            for _ in 0..<100 {
+                if !web.isLoading, (try? await web.evaluateJavaScript("document.querySelector('video')?.readyState >= 2")) as? Bool == true { return }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTFail("Fixture did not load; inspect document-start script injection")
+        }
+        try await load()
+        let browserControls = try await web.evaluateJavaScript("window.initialControls") as? String
+        XCTAssertNotEqual(browserControls, "none")
+        await controller.showWallpaper()
+        // A full document navigation must retain background mode before the page's own scripts run.
+        try await load()
+        let hidden = try await web.evaluateJavaScript("window.initialControls === 'none' && getComputedStyle(document.querySelector('.ytp-autonav-endscreen')).display === 'none'") as? Bool
+        XCTAssertEqual(hidden, true, "Controls must already be hidden while the new document is parsing")
+        _ = try await web.evaluateJavaScript("document.querySelector('.ytp-chrome-bottom').outerHTML = '<div class=ytp-chrome-bottom>Replacement controls</div>'")
+        let replacementHidden = try await web.evaluateJavaScript("getComputedStyle(document.querySelector('.ytp-chrome-bottom')).display") as? String
+        XCTAssertEqual(replacementHidden, "none", "Replacement controls must not flash during SPA navigation")
+        _ = try await web.callAsyncJavaScript("const v = document.querySelector('video'); v.currentTime = v.duration - 0.1; await v.play();", arguments: [:], in: nil, contentWorld: .page)
+        for _ in 0..<20 {
+            if (try await web.evaluateJavaScript("window.nextCount")) as? Int == 1 { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let count = try await web.evaluateJavaScript("window.nextCount") as? Int
+        let countdowns = try await web.evaluateJavaScript("window.countdowns") as? Int
+        XCTAssertEqual(count, 1, "Next must be clicked within one second, not after the countdown")
+        XCTAssertEqual(countdowns, 0, "YouTube's delayed end handler must not also advance")
+        _ = try await web.evaluateJavaScript("document.querySelector('video').dispatchEvent(new Event('ended'))")
+        let duplicate = try await web.evaluateJavaScript("window.nextCount") as? Int
+        XCTAssertEqual(duplicate, 1)
+        for (configuration, ad, live, disabled) in [
+            ("{background:false,repeatVideo:false}", false, false, false),
+            ("{background:true,repeatVideo:true}", false, false, false),
+            ("{background:true,repeatVideo:false}", true, false, false),
+            ("{background:true,repeatVideo:false}", false, true, false),
+            ("{background:true,repeatVideo:false}", false, false, true)
+        ] {
+            _ = try await web.evaluateJavaScript("""
+                (() => {
+                window.mornDesktopTube.configure(\(configuration));
+                window.live = \(live);
+                document.querySelector('#movie_player').classList.toggle('ad-showing', \(ad));
+                document.querySelector('.ytp-next-button').disabled = \(disabled);
+                const v = document.querySelector('video'); v.dispatchEvent(new Event('playing')); v.dispatchEvent(new Event('ended'));
+                })();
+                """)
+            let guarded = try await web.evaluateJavaScript("window.nextCount") as? Int
+            XCTAssertEqual(guarded, 1, "Browser/repeat/ad/live/disabled-next must not advance")
+        }
+        await controller.stop()
+        try await load()
+        let restoredControls = try await web.evaluateJavaScript("window.initialControls") as? String
+        XCTAssertNotEqual(restoredControls, "none", "Returning to browser mode must restore its controls")
+    }
+
+    @MainActor
     func testLastVideoRestoresWithoutDashboard() async throws {
         _ = NSApplication.shared
         let suite = "MornDesktopTube.restore-test.\(UUID().uuidString)"

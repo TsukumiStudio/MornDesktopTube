@@ -3,7 +3,7 @@ enum PlayerScript {
     static let source = #"""
     (() => {
       if (!['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(location.hostname)) return;
-      const settings = { volume: 0, background: false, repeatVideo: false };
+      const settings = window.mornDesktopTubeSettings ?? { volume: 0, background: false, repeatVideo: false };
       const video = () => document.querySelector('#movie_player video, video');
       const player = () => document.querySelector('#movie_player');
       const validID = id => typeof id === 'string' && /^[A-Za-z0-9_-]{11}$/.test(id);
@@ -46,6 +46,10 @@ enum PlayerScript {
         }
         html[data-mdt-background="true"] #movie_player,
         html[data-mdt-background="true"] #movie_player * { visibility: visible !important; }
+        html[data-mdt-background="true"] #movie_player :is(
+          .ytp-chrome-bottom, .ytp-chrome-top, .ytp-gradient-bottom, .ytp-gradient-top,
+          .ytp-autonav-endscreen, .ytp-upnext, .ytp-endscreen-content
+        ) { display: none !important; }
         html[data-mdt-background="true"] #movie_player {
           position: fixed !important; inset: 0 !important;
           width: 100vw !important; height: 100vh !important; z-index: 2147483647 !important;
@@ -118,6 +122,19 @@ enum PlayerScript {
           return this.state();
         }
       };
+      let advancedVideo = null;
+      document.addEventListener('playing', () => { advancedVideo = null; }, true);
+      document.addEventListener('ended', event => {
+        const v = video();
+        const state = window.mornDesktopTube.state();
+        if (event.target !== v || !v?.ended || advancedVideo === v || !settings.background
+          || settings.repeatVideo || state.adPlaying || state.isLive || !state.duration || !state.canNext) return;
+        advancedVideo = v;
+        // Own this end event so YouTube cannot also start its delayed autoplay.
+        event.stopImmediatePropagation();
+        window.mornDesktopTube.skip(1);
+      }, true);
+      apply();
       const reportPlayback = () => window.webkit?.messageHandlers.playback?.postMessage(window.mornDesktopTube.state());
       for (const event of ['loadedmetadata', 'playing', 'pause', 'timeupdate']) {
         document.addEventListener(event, reportPlayback, true);
