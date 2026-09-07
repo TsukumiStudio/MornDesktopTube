@@ -7,6 +7,6 @@ cask "morndesktoptube" do
   desc "Play YouTube on the desktop from a standalone menu bar browser"
   homepage "https://github.com/matsufriends/MornDesktopTube"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
   app "MornDesktopTube.app"
 end
