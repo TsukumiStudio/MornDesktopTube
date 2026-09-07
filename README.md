@@ -44,7 +44,7 @@ Premium契約のあるアカウントでログインできた場合は、[YouTub
 
 ## Homebrewと更新
 
-初回の公開リリース・tap登録が完了した後、以下で導入できます（現時点では未公開）。
+以下で導入できます。ZIPから導入する場合は[GitHub Releases](https://github.com/matsufriends/MornDesktopTube/releases/latest)を利用してください。
 
 ```sh
 brew install --cask matsufriends/tap/morndesktoptube
@@ -58,7 +58,7 @@ brew install --cask matsufriends/tap/morndesktoptube
 
 `.github/workflows/release.yml` はMornAIMeterと同じMornNotary経由の署名・公証とtap更新を行います。`v0.3.0` のようなタグのpushでUniversal（Apple Silicon / Intel）版をビルドします。`Support/morndesktoptube.rb.in` のバージョンとSHA-256は実際の配布ZIPから埋めてtapへ登録します。ローカルビルドは従来どおりad-hoc署名です。
 
-初回公開には `matsufriends/MornDesktopTube` リポジトリの作成・pushと、MornAIMeter同様の `MORN_RELEASE_TOKEN` secret（MornNotary / homebrew-tapへの必要権限）の設定が必要です。署名・公証が失敗した場合はリリースしません。
+タグpushによる自動配布には、MornAIMeter同様の `MORN_RELEASE_TOKEN` secret（MornNotary / homebrew-tapへの必要権限）の設定が必要です。このリポジトリには未設定のため、初回リリースはCLIからMornNotaryへ依頼し、署名済みZIPを検証してReleaseとtapへ登録しています。CLIのログイントークンをActionsへコピーしないでください。署名・公証が失敗した場合はリリースしません。
 
 ## 検証
 
