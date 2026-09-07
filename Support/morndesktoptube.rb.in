@@ -1,0 +1,12 @@
+cask "morndesktoptube" do
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  url "https://github.com/matsufriends/MornDesktopTube/releases/download/v#{version}/MornDesktopTube.app.zip"
+  name "MornDesktopTube"
+  desc "Play YouTube on the desktop from a standalone menu bar browser"
+  homepage "https://github.com/matsufriends/MornDesktopTube"
+
+  depends_on macos: ">= :sonoma"
+  app "MornDesktopTube.app"
+end

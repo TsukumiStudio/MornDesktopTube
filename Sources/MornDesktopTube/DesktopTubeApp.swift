@@ -10,9 +10,10 @@ enum Spacing {
 @main
 struct DesktopTubeApp: App {
     @StateObject private var controller = PlayerController()
+    @StateObject private var updater = Updater()
     var body: some Scene {
         MenuBarExtra("MornDesktopTube", systemImage: "play.rectangle.on.rectangle") {
-            DashboardView(controller: controller)
+            DashboardView(controller: controller, updater: updater)
         }
         .menuBarExtraStyle(.window)
     }
@@ -20,6 +21,7 @@ struct DesktopTubeApp: App {
 
 struct DashboardView: View {
     @ObservedObject var controller: PlayerController
+    @ObservedObject var updater: Updater = Updater()
     @State private var videoURL = ""
     @State private var scrubbing = false
     @State private var seekPosition = 0.0
@@ -78,7 +80,6 @@ struct DashboardView: View {
                 transport(controller.isPaused ? "play.fill" : "pause.fill", controller.isPaused ? "再生" : "一時停止",
                           enabled: controller.hasVideo) { await controller.togglePlayback() }
                 transport("forward.end.fill", "次の曲", enabled: controller.canNext) { await controller.next() }
-                transport("stop.fill", "停止（背景と再生）", enabled: controller.hasVideo || controller.isWallpaper) { await controller.stop() }
                 Spacer()
             }
             HStack(spacing: Spacing.gap) {
@@ -103,8 +104,15 @@ struct DashboardView: View {
             HStack {
                 Button("YouTube画面") { dismiss(); controller.showBrowser() }
                 Spacer()
-                Button("背景に表示") { Task { await controller.showWallpaper(); dismiss() } }
-                    .buttonStyle(.borderedProminent).disabled(!controller.hasVideo || controller.isWallpaper)
+                Button(controller.isWallpaper ? "背景を停止" : "背景に表示") {
+                    Task {
+                        if controller.isWallpaper { await controller.stop() }
+                        else { await controller.showWallpaper(); dismiss() }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(controller.isWallpaper ? Color.red : Color.accentColor)
+                .disabled(!controller.hasVideo && !controller.isWallpaper)
             }
             Picker("表示先", selection: $controller.screenID) {
                 Text("メインディスプレイ").tag(CGDirectDisplayID(0))
@@ -117,6 +125,11 @@ struct DashboardView: View {
                 Spacer()
                 Button("終了") { NSApp.terminate(nil) }.keyboardShortcut("q")
             }
+            HStack {
+                updateControls
+                Spacer()
+                Text("ver \(Updater.version)").font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(Spacing.edge).frame(width: 360)
         .task {
@@ -124,6 +137,28 @@ struct DashboardView: View {
                 if !scrubbing { await controller.refreshPlayback() }
                 do { try await Task.sleep(for: .milliseconds(500)) }
                 catch { return }
+            }
+        }
+    }
+
+    @ViewBuilder private var updateControls: some View {
+        switch updater.state {
+        case .idle:
+            Button("更新を確認") { Task { await updater.check() } }
+        case .checking:
+            Text("更新を確認中…").font(.caption)
+        case .available(let tag):
+            Button("最新へ更新") { Task { await updater.update() } }.help(tag)
+        case .upToDate:
+            Button("最新版です ↻") { Task { await updater.check() } }.help("更新を確認")
+        case .updating:
+            Text("更新中…").font(.caption)
+        case .updated:
+            Button("再起動して適用") { updater.restart() }
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: Spacing.gap) {
+                Text(message).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                Button("更新を再確認") { Task { await updater.check() } }
             }
         }
     }
