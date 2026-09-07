@@ -11,6 +11,16 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     @Published private(set) var status = "アプリ内のYouTubeで動画を選んでください。"
     @Published private(set) var pageAddress = ""
     @Published private(set) var volume = 50.0
+    @Published private(set) var currentTrack: VideoTrack?
+    @Published private(set) var nextTrack: VideoTrack?
+    @Published private(set) var currentTime = 0.0
+    @Published private(set) var duration: Double?
+    @Published private(set) var canSeek = false
+    @Published private(set) var canNext = false
+    @Published private(set) var canPrevious = false
+    @Published private(set) var isLive = false
+    @Published private(set) var isControlling = false
+    private var playerCanPrevious = false
     @Published var screenID: CGDirectDisplayID = 0 { didSet { moveWallpaper() } }
     @Published private(set) var screens = NSScreen.screens
     let webView: WKWebView
@@ -132,17 +142,52 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     func togglePlayback() async {
+        await performPlayerAction("return await window.mornDesktopTube.togglePlayback()")
+    }
+
+    func seek(to seconds: Double, videoID: String?) async {
+        guard seconds.isFinite, canSeek, videoID == currentTrack?.id else { return }
+        await performPlayerAction("return window.mornDesktopTube.seek(seconds, expectedID)",
+            arguments: ["seconds": seconds, "expectedID": videoID as Any? ?? NSNull()])
+    }
+
+    func next() async {
+        guard canNext else { return }
+        await performPlayerAction("return window.mornDesktopTube.skip(1)")
+    }
+
+    func previous() async {
+        guard canPrevious else { return }
+        if playerCanPrevious {
+            await performPlayerAction("return window.mornDesktopTube.skip(-1)")
+        } else if let item = previousHistoryItem {
+            webView.go(to: item)
+        }
+    }
+
+    private var previousHistoryItem: WKBackForwardListItem? {
+        webView.backForwardList.backList.reversed().first { item in
+            guard Self.youtubeURL(item.url.absoluteString) != nil,
+                  let id = URLComponents(url: item.url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "v" })?.value else { return false }
+            return id != currentTrack?.id && VideoTrack(["id": id]) != nil
+        }
+    }
+
+    private func performPlayerAction(_ script: String, arguments: [String: Any] = [:]) async {
+        guard !isControlling else { return }
+        isControlling = true
+        defer { isControlling = false }
         do {
             let result = try await webView.callAsyncJavaScript(
-                "return await window.mornDesktopTube.togglePlayback()", arguments: [:], in: nil, contentWorld: .page)
+                script, arguments: arguments, in: nil, contentWorld: .page)
             updatePlayback(result)
-        } catch { status = "再生を操作できません。YouTube画面を開いて確認してください。" }
+        } catch { status = "操作できませんでした。動画の切り替え中や、操作に対応していない場合があります。" }
     }
 
     func refreshPlayback() async {
         let current = settingsRevision
         guard let value = try? await webView.evaluateJavaScript("window.mornDesktopTube?.state() ?? null") else {
-            hasVideo = false
+            clearPlayback()
             return
         }
         guard current == settingsRevision else { return }
@@ -163,9 +208,34 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     private func updatePlayback(_ value: Any?) {
         guard let state = value as? [String: Any], let hasVideo = state["hasVideo"] as? Bool,
               let paused = state["paused"] as? Bool, let level = state["volume"] as? Double,
-              level.isFinite else { hasVideo = false; return }
+              level.isFinite else { clearPlayback(); return }
         self.hasVideo = hasVideo
         isPaused = paused
+        currentTrack = VideoTrack(state["currentTrack"])
+        nextTrack = VideoTrack(state["nextTrack"])
+        let time = state["currentTime"] as? Double ?? 0
+        currentTime = time.isFinite ? max(0, time) : 0
+        let length = state["duration"] as? Double
+        duration = length.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        isLive = state["isLive"] as? Bool ?? false
+        canSeek = hasVideo && duration != nil && (state["canSeek"] as? Bool == true)
+        canNext = hasVideo && (state["canNext"] as? Bool == true)
+        playerCanPrevious = state["canPrevious"] as? Bool == true
+        canPrevious = hasVideo && state["adPlaying"] as? Bool != true && (playerCanPrevious || previousHistoryItem != nil)
+    }
+
+    private func clearPlayback() {
+        hasVideo = false
+        isPaused = true
+        currentTrack = nil
+        nextTrack = nil
+        currentTime = 0
+        duration = nil
+        canSeek = false
+        canNext = false
+        canPrevious = false
+        isLive = false
+        playerCanPrevious = false
     }
 
     private func attach(to container: NSView) {
@@ -204,7 +274,7 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        hasVideo = false
+        clearPlayback()
         status = "読み込み中…"
     }
 
@@ -222,7 +292,7 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        hasVideo = false
+        clearPlayback()
         status = "再生プロセスが終了しました。YouTube画面で再読み込みしてください。"
     }
 

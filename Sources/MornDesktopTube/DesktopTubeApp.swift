@@ -21,56 +21,99 @@ struct DesktopTubeApp: App {
 struct DashboardView: View {
     @ObservedObject var controller: PlayerController
     @State private var videoURL = ""
+    @State private var scrubbing = false
+    @State private var seekPosition = 0.0
+    @State private var seekVideoID: String?
     @Environment(\.dismiss) private var dismiss
 
+    static func timeLabel(_ seconds: Double?) -> String {
+        guard let seconds, seconds.isFinite, seconds >= 0, seconds < Double(Int.max) else { return "--:--" }
+        let total = Int(seconds)
+        let minutes = String(format: "%02d", (total / 60) % 60)
+        let remainder = String(format: "%02d", total % 60)
+        return total >= 3600 ? "\(total / 3600):\(minutes):\(remainder)" : "\(total / 60):\(remainder)"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.section) {
-            VStack(alignment: .leading, spacing: Spacing.gap) {
-                Label("MornDesktopTube", systemImage: "play.rectangle.on.rectangle").font(.headline)
-                Text(controller.status).font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: Spacing.panel) {
+            Label("MornDesktopTube", systemImage: "play.rectangle.on.rectangle").font(.headline)
+            HStack(spacing: Spacing.gap) {
+                TrackArtwork(track: controller.currentTrack, width: Spacing.panel * 7)
+                VStack(alignment: .leading, spacing: Spacing.gap) {
+                    Text(controller.currentTrack.map { $0.title.isEmpty ? "タイトルを取得できません" : $0.title } ?? "動画を選んでください")
+                        .font(.headline).lineLimit(2)
+                    Text(controller.hasVideo ? (controller.isPaused ? "一時停止中" : "再生中") : "未再生")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            VStack(spacing: Spacing.gap) {
+                Slider(value: Binding(
+                    get: { min(scrubbing ? seekPosition : controller.currentTime, controller.duration ?? 1) },
+                    set: { value in
+                        if !scrubbing { Task { await controller.seek(to: value, videoID: controller.currentTrack?.id) } }
+                        seekPosition = value
+                    }
+                ), in: 0...max(controller.duration ?? 1, 1), onEditingChanged: { editing in
+                    if editing {
+                        seekPosition = controller.currentTime
+                        seekVideoID = controller.currentTrack?.id
+                    } else {
+                        let position = seekPosition
+                        let id = seekVideoID
+                        Task { await controller.seek(to: position, videoID: id) }
+                    }
+                    scrubbing = editing
+                })
+                .disabled(!controller.canSeek || controller.isControlling)
+                .accessibilityLabel("再生位置")
+                HStack {
+                    Text(Self.timeLabel(scrubbing ? seekPosition : controller.currentTime))
+                    Spacer()
+                    Text(controller.isLive ? "ライブ" : Self.timeLabel(controller.duration))
+                }.font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            }
+            HStack(spacing: Spacing.panel) {
+                Spacer()
+                transport("backward.end.fill", "前の曲", enabled: controller.canPrevious) { await controller.previous() }
+                transport(controller.isPaused ? "play.fill" : "pause.fill", controller.isPaused ? "再生" : "一時停止",
+                          enabled: controller.hasVideo) { await controller.togglePlayback() }
+                transport("forward.end.fill", "次の曲", enabled: controller.canNext) { await controller.next() }
+                transport("stop.fill", "停止（背景と再生）", enabled: controller.hasVideo || controller.isWallpaper) { await controller.stop() }
+                Spacer()
             }
             HStack(spacing: Spacing.gap) {
-                TextField("YouTube URL", text: $videoURL).textFieldStyle(.roundedBorder)
-                    .onSubmit { openVideo() }
+                TrackArtwork(track: controller.nextTrack, width: Spacing.panel * 5)
+                VStack(alignment: .leading, spacing: Spacing.gap) {
+                    Text("次の曲").font(.caption).foregroundStyle(.secondary)
+                    Text(controller.nextTrack.map { $0.title.isEmpty ? "タイトルを取得できません" : $0.title } ?? "次の曲の情報はありません")
+                        .font(.callout).lineLimit(2)
+                }
+            }
+            Divider()
+            HStack(spacing: Spacing.gap) {
+                Image(systemName: controller.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                Slider(value: Binding(get: { controller.volume }, set: { controller.setVolume($0) }), in: 0...100, step: 1)
+                    .accessibilityLabel("動画の音量")
+                Text("\(Int(controller.volume))%").font(.caption).monospacedDigit().frame(width: Spacing.panel * 2.5)
+            }
+            HStack(spacing: Spacing.gap) {
+                TextField("YouTube URL", text: $videoURL).textFieldStyle(.roundedBorder).onSubmit { openVideo() }
                 Button("開く") { openVideo() }.disabled(videoURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            HStack(spacing: Spacing.gap) {
+            HStack {
                 Button("YouTube画面") { dismiss(); controller.showBrowser() }
                 Spacer()
                 Button("背景に表示") { Task { await controller.showWallpaper(); dismiss() } }
                     .buttonStyle(.borderedProminent).disabled(!controller.hasVideo || controller.isWallpaper)
             }
-            Divider()
-            VStack(alignment: .leading, spacing: Spacing.gap) {
-                HStack {
-                    Label("動画の音量", systemImage: controller.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    Spacer()
-                    Text("\(Int(controller.volume))%").foregroundStyle(.secondary).monospacedDigit()
-                }
-                Slider(value: Binding(get: { controller.volume }, set: { controller.setVolume($0) }), in: 0...100, step: 1)
-                    .accessibilityLabel("動画の音量")
-                HStack {
-                    Button(controller.isPaused ? "再生" : "一時停止") { Task { await controller.togglePlayback() } }
-                        .disabled(!controller.hasVideo)
-                    Spacer()
-                    Button("背景と再生を停止") { Task { await controller.stop() } }
-                        .disabled(!controller.hasVideo && !controller.isWallpaper)
+            Picker("表示先", selection: $controller.screenID) {
+                Text("メインディスプレイ").tag(CGDirectDisplayID(0))
+                ForEach(controller.screens, id: \.self) { screen in
+                    Text(screen.localizedName).tag(PlayerController.displayID(screen))
                 }
             }
-            Divider()
-            VStack(alignment: .leading, spacing: Spacing.panel) {
-                Picker("表示先", selection: $controller.screenID) {
-                    Text("メインディスプレイ").tag(CGDirectDisplayID(0))
-                    ForEach(controller.screens, id: \.self) { screen in
-                        Text(screen.localizedName).tag(PlayerController.displayID(screen))
-                    }
-                }
-            }
-            Text("ログイン情報はアプリ専用に保持します。Google側の制限でログインできない場合があります。")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Text("外部ブラウザ・画面収録は不要").font(.caption).foregroundStyle(.secondary)
+            HStack(alignment: .top) {
+                Text(controller.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 Spacer()
                 Button("終了") { NSApp.terminate(nil) }.keyboardShortcut("q")
             }
@@ -78,15 +121,40 @@ struct DashboardView: View {
         .padding(Spacing.edge).frame(width: 360)
         .task {
             while !Task.isCancelled {
-                await controller.refreshPlayback()
-                do { try await Task.sleep(for: .seconds(1)) }
+                if !scrubbing { await controller.refreshPlayback() }
+                do { try await Task.sleep(for: .milliseconds(500)) }
                 catch { return }
             }
         }
     }
 
+    private func transport(_ image: String, _ label: String, enabled: Bool, action: @escaping () async -> Void) -> some View {
+        Button { Task { await action() } } label: {
+            Image(systemName: image).frame(width: Spacing.panel, height: Spacing.panel)
+        }
+        .disabled(!enabled || controller.isControlling).help(label).accessibilityLabel(label)
+    }
+
     private func openVideo() {
         controller.openYouTube(videoURL)
         if PlayerController.youtubeURL(videoURL) != nil { dismiss() }
+    }
+}
+
+private struct TrackArtwork: View {
+    let track: VideoTrack?
+    let width: CGFloat
+    var body: some View {
+        AsyncImage(url: track?.thumbnailURL) { phase in
+            if let image = phase.image { image.resizable().scaledToFill() }
+            else {
+                ZStack {
+                    Color.secondary.opacity(0.12)
+                    Image(systemName: "music.note").foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(width: width, height: width * 9 / 16)
+        .clipped().clipShape(RoundedRectangle(cornerRadius: Spacing.gap)).accessibilityHidden(true)
     }
 }

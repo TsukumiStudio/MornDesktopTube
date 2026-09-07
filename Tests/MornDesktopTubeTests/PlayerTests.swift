@@ -21,6 +21,10 @@ final class PlayerTests: XCTestCase {
         webView.loadHTMLString("""
             <html><body><nav id="navigation">YouTube navigation</nav>
             <div id="movie_player"><video id="video" loop playsinline src="data:video/mp4;base64,\(fixture.base64EncodedString())"></video></div>
+            <a class="ytp-next-button" aria-disabled="false" href="https://www.youtube.com/watch?v=next0000001"
+               data-tooltip-text="次のテスト曲" onclick="event.preventDefault(); window.nextCount = (window.nextCount || 0) + 1">Next</a>
+            <a class="ytp-prev-button" aria-disabled="false" onclick="window.previousCount = (window.previousCount || 0) + 1">Previous</a>
+            <script>document.querySelector('#movie_player').getVideoData = () => ({video_id: 'current0001', title: '再生中のテスト曲', isLive: false});</script>
             </body></html>
             """, baseURL: URL(string: "https://www.youtube.com/"))
         for _ in 0..<100 {
@@ -47,6 +51,38 @@ final class PlayerTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(30))
         let restoredVolume = try await webView.evaluateJavaScript("document.querySelector('video').volume") as! Double
         XCTAssertEqual(restoredVolume, 0.37, accuracy: 0.001, "YouTube's own volume restoration must not override the dashboard")
+
+        await controller.refreshPlayback()
+        XCTAssertEqual(controller.currentTrack?.title, "再生中のテスト曲")
+        XCTAssertEqual(controller.currentTrack?.thumbnailURL.absoluteString, "https://i.ytimg.com/vi/current0001/mqdefault.jpg")
+        XCTAssertEqual(controller.nextTrack?.title, "次のテスト曲")
+        XCTAssertEqual(controller.nextTrack?.thumbnailURL.absoluteString, "https://i.ytimg.com/vi/next0000001/mqdefault.jpg")
+        XCTAssertTrue(controller.canNext)
+        XCTAssertTrue(controller.canPrevious)
+        await controller.next()
+        await controller.previous()
+        let nextCount = try await webView.evaluateJavaScript("window.nextCount") as? Int
+        let previousCount = try await webView.evaluateJavaScript("window.previousCount") as? Int
+        XCTAssertEqual(nextCount, 1)
+        XCTAssertEqual(previousCount, 1)
+        await controller.togglePlayback()
+        await controller.seek(to: 1.25, videoID: "current0001")
+        let sought = try await webView.evaluateJavaScript("document.querySelector('video').currentTime") as! Double
+        XCTAssertEqual(sought, 1.25, accuracy: 0.05)
+        await controller.seek(to: 0.5, videoID: "different01")
+        await controller.seek(to: .nan, videoID: "current0001")
+        let unchanged = try await webView.evaluateJavaScript("document.querySelector('video').currentTime") as! Double
+        XCTAssertEqual(unchanged, sought, accuracy: 0.05)
+        _ = try await webView.evaluateJavaScript("document.querySelector('#movie_player').classList.add('ad-showing')")
+        await controller.refreshPlayback()
+        XCTAssertFalse(controller.canSeek)
+        XCTAssertFalse(controller.canNext)
+        XCTAssertFalse(controller.canPrevious)
+        _ = try await webView.evaluateJavaScript("document.querySelector('#movie_player').classList.remove('ad-showing'); document.querySelector('.ytp-next-button').setAttribute('aria-disabled', 'true')")
+        await controller.refreshPlayback()
+        XCTAssertNil(controller.nextTrack)
+        XCTAssertFalse(controller.canNext)
+        await controller.togglePlayback()
 
         await controller.showWallpaper()
         let wallpaper = try XCTUnwrap(controller.wallpaper)
@@ -90,6 +126,10 @@ final class PlayerTests: XCTestCase {
         }
         XCTAssertTrue(PlayerController.isSecureNavigation(URL(string: "https://accounts.google.com/")!))
         XCTAssertFalse(PlayerController.isSecureNavigation(URL(string: "file:///etc/passwd")!))
+        XCTAssertNil(VideoTrack(["id": "../secret"]))
+        XCTAssertEqual(DashboardView.timeLabel(3661), "1:01:01")
+        XCTAssertEqual(DashboardView.timeLabel(.infinity), "--:--")
+        XCTAssertEqual(DashboardView.timeLabel(nil), "--:--")
         let host = NSHostingView(rootView: DashboardView(controller: PlayerController(dataStore: .nonPersistent()))
             .background(Color(nsColor: .windowBackgroundColor)))
         host.setFrameSize(host.fittingSize)
