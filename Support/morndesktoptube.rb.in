@@ -4,7 +4,7 @@ cask "morndesktoptube" do
 
   url "https://github.com/matsufriends/MornDesktopTube/releases/download/v#{version}/MornDesktopTube.app.zip"
   name "MornDesktopTube"
-  desc "Play YouTube on the desktop from a standalone menu bar browser"
+  desc "YouTubeをMacのデスクトップ背景で再生するメニューバー常駐アプリ"
   homepage "https://github.com/matsufriends/MornDesktopTube"
 
   depends_on macos: :sonoma
