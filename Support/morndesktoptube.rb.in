@@ -2,10 +2,10 @@ cask "morndesktoptube" do
   version "@VERSION@"
   sha256 "@SHA256@"
 
-  url "https://github.com/matsufriends/MornDesktopTube/releases/download/v#{version}/MornDesktopTube.app.zip"
+  url "https://github.com/TsukumiStudio/MornDesktopTube/releases/download/v#{version}/MornDesktopTube.app.zip"
   name "MornDesktopTube"
   desc "YouTubeをMacのデスクトップ背景で再生するメニューバー常駐アプリ"
-  homepage "https://github.com/matsufriends/MornDesktopTube"
+  homepage "https://github.com/TsukumiStudio/MornDesktopTube"
 
   depends_on macos: :sonoma
   app "MornDesktopTube.app"

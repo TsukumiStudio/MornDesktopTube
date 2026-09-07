@@ -6,7 +6,7 @@ macOS 14以降対応。外部ブラウザは不要です。
 ## Homebrew での導入
 
 ```bash
-brew install --cask matsufriends/tap/morndesktoptube
+brew install --cask tsukumistudio/tap/morndesktoptube
 ```
 
 ## Homebrew での更新

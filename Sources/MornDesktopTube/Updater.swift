@@ -7,7 +7,7 @@ final class Updater: ObservableObject {
     }
     @Published private(set) var state: State = .idle
     static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "開発版"
-    private static let cask = "matsufriends/tap/morndesktoptube"
+    private static let cask = "tsukumistudio/tap/morndesktoptube"
     private static let appPath = "/Applications/MornDesktopTube.app"
 
     static func parseVersion(_ raw: String) -> [Int]? {
@@ -33,7 +33,7 @@ final class Updater: ObservableObject {
         if case .updating = state { return }
         state = .checking
         do {
-            var request = URLRequest(url: URL(string: "https://api.github.com/repos/matsufriends/MornDesktopTube/releases/latest")!)
+            var request = URLRequest(url: URL(string: "https://api.github.com/repos/TsukumiStudio/MornDesktopTube/releases/latest")!)
             request.timeoutInterval = 20
             request.cachePolicy = .reloadIgnoringLocalCacheData
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
