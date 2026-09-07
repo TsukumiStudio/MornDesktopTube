@@ -37,11 +37,24 @@ struct DashboardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.panel) {
+            HStack {
+                Button("ブラウザを開く") { dismiss(); controller.showBrowser() }
+                Spacer()
+                Button(controller.isWallpaper ? "背景を中止" : "背景に表示") {
+                    Task {
+                        if controller.isWallpaper { await controller.stop() }
+                        else { await controller.showWallpaper(); dismiss() }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(controller.isWallpaper ? Color.red : Color.accentColor)
+                .disabled(!controller.hasVideo && !controller.isWallpaper)
+            }
             Label("MornDesktopTube", systemImage: "play.rectangle.on.rectangle").font(.headline)
             HStack(spacing: Spacing.gap) {
                 TrackArtwork(track: controller.currentTrack, width: Spacing.panel * 7)
                 VStack(alignment: .leading, spacing: Spacing.gap) {
-                    Text(controller.currentTrack.map { $0.title.isEmpty ? "タイトルを取得できません" : $0.title } ?? "動画を選んでください")
+                    Text(controller.currentTrack.map { $0.title.isEmpty ? "タイトルを取得できません" : $0.title } ?? "動画を再生してください")
                         .font(.headline).lineLimit(2)
                     Text(controller.hasVideo ? (controller.isPaused ? "一時停止中" : "再生中") : "未再生")
                         .font(.caption).foregroundStyle(.secondary)
@@ -75,17 +88,17 @@ struct DashboardView: View {
             }
             HStack(spacing: Spacing.panel) {
                 Spacer()
-                transport("backward.end.fill", "前の曲", enabled: controller.canPrevious) { await controller.previous() }
+                transport("backward.end.fill", "前の動画", enabled: controller.canPrevious) { await controller.previous() }
                 transport(controller.isPaused ? "play.fill" : "pause.fill", controller.isPaused ? "再生" : "一時停止",
                           enabled: controller.hasVideo) { await controller.togglePlayback() }
-                transport("forward.end.fill", "次の曲", enabled: controller.canNext) { await controller.next() }
+                transport("forward.end.fill", "次の動画", enabled: controller.canNext) { await controller.next() }
                 Spacer()
             }
             HStack(spacing: Spacing.gap) {
                 TrackArtwork(track: controller.nextTrack, width: Spacing.panel * 5)
                 VStack(alignment: .leading, spacing: Spacing.gap) {
-                    Text("次の曲").font(.caption).foregroundStyle(.secondary)
-                    Text(controller.nextTrack.map { $0.title.isEmpty ? "タイトルを取得できません" : $0.title } ?? "次の曲の情報はありません")
+                    Text("次の動画").font(.caption).foregroundStyle(.secondary)
+                    Text(controller.nextTrack.map { $0.title.isEmpty ? "タイトルを取得できません" : $0.title } ?? "次の動画の情報はありません")
                         .font(.callout).lineLimit(2)
                 }
             }
@@ -95,19 +108,6 @@ struct DashboardView: View {
                 Slider(value: Binding(get: { controller.volume }, set: { controller.setVolume($0) }), in: 0...100, step: 1)
                     .accessibilityLabel("動画の音量")
                 Text("\(Int(controller.volume))%").font(.caption).monospacedDigit().frame(width: Spacing.panel * 2.5)
-            }
-            HStack {
-                Button("YouTube画面") { dismiss(); controller.showBrowser() }
-                Spacer()
-                Button(controller.isWallpaper ? "背景を停止" : "背景に表示") {
-                    Task {
-                        if controller.isWallpaper { await controller.stop() }
-                        else { await controller.showWallpaper(); dismiss() }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(controller.isWallpaper ? Color.red : Color.accentColor)
-                .disabled(!controller.hasVideo && !controller.isWallpaper)
             }
             Picker("表示先", selection: $controller.screenID) {
                 Text("メインディスプレイ").tag(CGDirectDisplayID(0))
