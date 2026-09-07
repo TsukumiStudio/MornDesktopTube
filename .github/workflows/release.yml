@@ -1,6 +1,7 @@
 name: Release mac app
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -28,15 +29,20 @@ jobs:
           done
 
       - name: Build
-        run: VERSION="${GITHUB_REF_NAME#v}" UNIVERSAL=1 zsh build.sh
+        run: |
+          set -euo pipefail
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Support/Info.plist)
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          VERSION="$VERSION" UNIVERSAL=1 zsh build.sh
 
       - name: Sign & notarize via MornNotary
         env:
           GH_TOKEN: ${{ secrets.MORN_NOTARY_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-
           SUBMIT_ZIP="$(mktemp -d)/MornDesktopTube.zip"
           ditto -c -k --keepParent dist/MornDesktopTube.app "$SUBMIT_ZIP"
 
@@ -85,6 +91,7 @@ jobs:
           ditto -c -k --keepParent MornDesktopTube.app MornDesktopTube.app.zip
 
       - name: Publish release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -100,9 +107,13 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
           SHA="$(shasum -a 256 dist/MornDesktopTube.app.zip | awk '{print $1}')"
           git clone "https://x-access-token:${GH_TOKEN}@github.com/TsukumiStudio/homebrew-tap.git" tap
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            git -C tap push --dry-run origin HEAD:main
+            echo "Trial completed; release and Homebrew cask were not changed."
+            exit 0
+          fi
           mkdir -p tap/Casks
           sed -e "s/@VERSION@/${VERSION}/g" -e "s/@SHA256@/${SHA}/g" Support/morndesktoptube.rb.in > tap/Casks/morndesktoptube.rb
           cd tap
