@@ -92,17 +92,23 @@ struct DashboardView: View {
                 transport(controller.isPaused ? "play.fill" : "pause.fill", controller.isPaused ? "再生" : "一時停止",
                           enabled: controller.hasVideo) { await controller.togglePlayback() }
                 transport("forward.end.fill", "次の動画", enabled: controller.canNext) { await controller.next() }
-                Button { controller.setRepeating(!controller.isRepeating) } label: {
-                    HStack(spacing: Spacing.gap / 2) {
-                        Image(systemName: "repeat").frame(width: Spacing.panel, height: Spacing.panel)
-                        Image(systemName: "checkmark")
-                            .font(.system(size: Spacing.gap, weight: .bold))
-                            .opacity(controller.isRepeating ? 1 : 0)
+                let repeatButton = Button { controller.setRepeating(!controller.isRepeating) } label: {
+                    Image(systemName: "repeat").frame(width: Spacing.panel, height: Spacing.panel)
+                        .overlay(alignment: .topTrailing) {
+                            if controller.isRepeating {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: Spacing.gap, weight: .bold))
+                                    .offset(x: Spacing.gap, y: -Spacing.gap / 2)
+                            }
+                        }
+                }
+                Group {
+                    if controller.isRepeating {
+                        repeatButton.buttonStyle(.borderedProminent).tint(.accentColor).foregroundStyle(.white)
+                    } else {
+                        repeatButton
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(controller.isRepeating ? Color.accentColor : Color(nsColor: .controlColor))
-                .foregroundStyle(controller.isRepeating ? Color.white : Color.primary)
                 .accessibilityLabel("この動画をリピート")
                 .accessibilityValue(controller.isRepeating ? "オン" : "オフ")
                 .help(controller.isRepeating ? "リピート：オン（クリックでオフ）" : "リピート：オフ（クリックでオン）")
