@@ -31,14 +31,6 @@ brew uninstall --cask morndesktoptube
 3. メニューバーから曲送り・再生／一時停止・シーク・音量を操作できます。
 4. 背景と再生を止めるには、赤い「背景を停止」を押します。
 
-Googleログインはアプリ内で行い、ログイン状態を保持します。
-Google側の制限により、ログインやPremium特典を利用できない場合があります。
+## ライセンス
 
-## 開発
-
-```bash
-zsh build.sh              # dist/MornDesktopTube.app を生成
-swift test
-```
-
-自動リリースには `MORN_RELEASE_TOKEN` Secretの設定が必要です（未設定）。
+[The Unlicense](LICENSE)
