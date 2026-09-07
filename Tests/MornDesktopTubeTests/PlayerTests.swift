@@ -25,6 +25,9 @@ final class PlayerTests: XCTestCase {
               <video muted playsinline src="data:video/mp4;base64,\(fixture.base64EncodedString())"></video>
               <div class="ytp-chrome-bottom">Seek bar</div>
               <div class="ytp-autonav-endscreen">Next in 3 seconds</div>
+              <div class="html5-endscreen"><div class="recommendation-preview">Recommended video</div></div>
+              <div class="unknown-next-preview"><span>Up next</span></div>
+              <div class="ytp-caption-window-container"><span>Captions</span></div>
               <button class="ytp-next-button" onclick="window.nextCount++">Next</button>
             </div>
             <script>
@@ -50,6 +53,24 @@ final class PlayerTests: XCTestCase {
         try await load()
         let hidden = try await web.evaluateJavaScript("window.initialControls === 'none' && getComputedStyle(document.querySelector('.ytp-autonav-endscreen')).display === 'none'") as? Bool
         XCTAssertEqual(hidden, true, "Controls must already be hidden while the new document is parsing")
+        let overlaysHidden = try await web.evaluateJavaScript("""
+            [...document.querySelectorAll('.recommendation-preview, .unknown-next-preview, .unknown-next-preview span')]
+              .every(element => getComputedStyle(element).visibility === 'hidden')
+            """) as? Bool
+        XCTAssertEqual(overlaysHidden, true, "Recommendations and unknown up-next overlays must stay hidden")
+        let contentVisible = try await web.evaluateJavaScript("""
+            [...document.querySelectorAll('video, .ytp-caption-window-container span')]
+              .every(element => getComputedStyle(element).visibility === 'visible')
+            """) as? Bool
+        XCTAssertEqual(contentVisible, true, "Video and captions must remain visible")
+        let latePreviewHidden = try await web.evaluateJavaScript("""
+            (() => {
+              const preview = document.createElement('div'); preview.className = 'new-preview';
+              document.querySelector('#movie_player').append(preview);
+              return getComputedStyle(preview).visibility === 'hidden';
+            })()
+            """) as? Bool
+        XCTAssertEqual(latePreviewHidden, true, "Late-inserted previews must not flash")
         _ = try await web.evaluateJavaScript("document.querySelector('.ytp-chrome-bottom').outerHTML = '<div class=ytp-chrome-bottom>Replacement controls</div>'")
         let replacementHidden = try await web.evaluateJavaScript("getComputedStyle(document.querySelector('.ytp-chrome-bottom')).display") as? String
         XCTAssertEqual(replacementHidden, "none", "Replacement controls must not flash during SPA navigation")
@@ -88,6 +109,8 @@ final class PlayerTests: XCTestCase {
         try await load()
         let restoredControls = try await web.evaluateJavaScript("window.initialControls") as? String
         XCTAssertNotEqual(restoredControls, "none", "Returning to browser mode must restore its controls")
+        let browserPreview = try await web.evaluateJavaScript("getComputedStyle(document.querySelector('.unknown-next-preview span')).visibility") as? String
+        XCTAssertEqual(browserPreview, "visible", "Browser mode must retain the normal YouTube UI")
     }
 
     @MainActor

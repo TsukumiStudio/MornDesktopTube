@@ -44,8 +44,13 @@ enum PlayerScript {
         html[data-mdt-background="true"] body *:has(#movie_player) {
           transform: none !important; contain: none !important; overflow: visible !important;
         }
+        html[data-mdt-background="true"] #movie_player * { visibility: hidden !important; }
         html[data-mdt-background="true"] #movie_player,
-        html[data-mdt-background="true"] #movie_player * { visibility: visible !important; }
+        html[data-mdt-background="true"] #movie_player video,
+        html[data-mdt-background="true"] #movie_player .ytp-caption-window-container,
+        html[data-mdt-background="true"] #movie_player .ytp-caption-window-container * {
+          visibility: visible !important;
+        }
         html[data-mdt-background="true"] #movie_player :is(
           .ytp-chrome-bottom, .ytp-chrome-top, .ytp-gradient-bottom, .ytp-gradient-top,
           .ytp-autonav-endscreen, .ytp-upnext, .ytp-endscreen-content
