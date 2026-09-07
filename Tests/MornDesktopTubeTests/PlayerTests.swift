@@ -92,9 +92,22 @@ final class PlayerTests: XCTestCase {
         XCTAssertEqual(wallpaper.frame, screen.frame)
         XCTAssertTrue(wallpaper.ignoresMouseEvents)
         XCTAssertFalse(wallpaper.canBecomeKey)
-        XCTAssertGreaterThan(wallpaper.level.rawValue, Int(CGWindowLevelForKey(.desktopWindow)))
+        XCTAssertEqual(wallpaper.level.rawValue, Int(CGWindowLevelForKey(.desktopWindow)) - 1)
         XCTAssertLessThan(wallpaper.level.rawValue, Int(CGWindowLevelForKey(.desktopIconWindow)))
         XCTAssertTrue(wallpaper.collectionBehavior.contains(.canJoinAllSpaces))
+        try await Task.sleep(for: .milliseconds(100))
+        let orderedWindows = try XCTUnwrap(CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]])
+        let wallpaperIndex = try XCTUnwrap(orderedWindows.firstIndex {
+            ($0[kCGWindowNumber as String] as? Int) == wallpaper.windowNumber
+        }, "Wallpaper must actually be on screen")
+        let desktopIcons = orderedWindows.indices.filter {
+            (orderedWindows[$0][kCGWindowOwnerName as String] as? String) == "Finder" &&
+            (orderedWindows[$0][kCGWindowLayer as String] as? Int) == Int(CGWindowLevelForKey(.desktopIconWindow))
+        }
+        if desktopIcons.isEmpty { XCTFail("No Finder desktop icon window found; run with a visible macOS desktop") }
+        for index in desktopIcons {
+            XCTAssertLessThan(index, wallpaperIndex, "Finder icons must be in front of the actual wallpaper window")
+        }
         let hidden = try await webView.evaluateJavaScript("getComputedStyle(document.querySelector('nav')).visibility") as? String
         XCTAssertEqual(hidden, "hidden")
         let fit = try await webView.evaluateJavaScript("getComputedStyle(document.querySelector('video')).objectFit") as? String
