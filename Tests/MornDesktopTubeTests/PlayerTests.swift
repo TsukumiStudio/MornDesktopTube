@@ -5,6 +5,24 @@ import WebKit
 
 final class PlayerTests: XCTestCase {
     @MainActor
+    func testDashboardSizeIsStableAcrossUpdateStates() {
+        _ = NSApplication.shared
+        let controller = PlayerController(dataStore: .nonPersistent())
+        let states: [Updater.State] = [.idle, .checking, .upToDate, .available("v999.999.999"),
+            .updating, .updated, .failed("更新を確認できませんでした。通信状態を確認してください。"), .idle]
+        var initial: NSSize?
+        for state in states {
+            let host = NSHostingView(rootView: DashboardView(controller: controller, updater: Updater(state: state)))
+            host.setFrameSize(host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            if let initial {
+                XCTAssertEqual(host.frame.width, initial.width, accuracy: 0.1, "\(state)")
+                XCTAssertEqual(host.frame.height, initial.height, accuracy: 0.1, "更新状態でダッシュボードが伸縮: \(state)")
+            } else { initial = host.frame.size }
+        }
+    }
+
+    @MainActor
     func testInternalPlaybackVolumeBackgroundAndStop() async throws {
         _ = NSApplication.shared
         XCTAssertTrue(PlayerController().webView.configuration.websiteDataStore.isPersistent)

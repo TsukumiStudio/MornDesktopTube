@@ -22,7 +22,6 @@ struct DesktopTubeApp: App {
 struct DashboardView: View {
     @ObservedObject var controller: PlayerController
     @ObservedObject var updater: Updater = Updater()
-    @State private var videoURL = ""
     @State private var scrubbing = false
     @State private var seekPosition = 0.0
     @State private var seekVideoID: String?
@@ -97,10 +96,6 @@ struct DashboardView: View {
                     .accessibilityLabel("動画の音量")
                 Text("\(Int(controller.volume))%").font(.caption).monospacedDigit().frame(width: Spacing.panel * 2.5)
             }
-            HStack(spacing: Spacing.gap) {
-                TextField("YouTube URL", text: $videoURL).textFieldStyle(.roundedBorder).onSubmit { openVideo() }
-                Button("開く") { openVideo() }.disabled(videoURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
             HStack {
                 Button("YouTube画面") { dismiss(); controller.showBrowser() }
                 Spacer()
@@ -120,16 +115,12 @@ struct DashboardView: View {
                     Text(screen.localizedName).tag(PlayerController.displayID(screen))
                 }
             }
-            HStack(alignment: .top) {
-                Text(controller.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                Spacer()
-                Button("終了") { NSApp.terminate(nil) }.keyboardShortcut("q")
-            }
             HStack {
                 updateControls
                 Spacer()
                 Text("ver \(Updater.version)").font(.caption).foregroundStyle(.secondary)
             }
+            .frame(height: Spacing.panel * 2)
         }
         .padding(Spacing.edge).frame(width: 360)
         .task {
@@ -156,10 +147,8 @@ struct DashboardView: View {
         case .updated:
             Button("再起動して適用") { updater.restart() }
         case .failed(let message):
-            VStack(alignment: .leading, spacing: Spacing.gap) {
-                Text(message).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-                Button("更新を再確認") { Task { await updater.check() } }
-            }
+            Button("確認失敗・再試行") { Task { await updater.check() } }
+                .foregroundStyle(.red).help(message).accessibilityHint(message)
         }
     }
 
@@ -168,11 +157,6 @@ struct DashboardView: View {
             Image(systemName: image).frame(width: Spacing.panel, height: Spacing.panel)
         }
         .disabled(!enabled || controller.isControlling).help(label).accessibilityLabel(label)
-    }
-
-    private func openVideo() {
-        controller.openYouTube(videoURL)
-        if PlayerController.youtubeURL(videoURL) != nil { dismiss() }
     }
 }
 

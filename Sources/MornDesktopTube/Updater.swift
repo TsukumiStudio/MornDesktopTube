@@ -6,6 +6,7 @@ final class Updater: ObservableObject {
         case idle, checking, upToDate, available(String), updating, updated, failed(String)
     }
     @Published private(set) var state: State = .idle
+    init(state: State = .idle) { self.state = state }
     static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "開発版"
     private static let cask = "tsukumistudio/tap/morndesktoptube"
     private static let appPath = "/Applications/MornDesktopTube.app"

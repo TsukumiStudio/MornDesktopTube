@@ -64,15 +64,6 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
         url.scheme?.lowercased() == "https" && url.host != nil && url.user == nil && url.password == nil
     }
 
-    func openYouTube(_ input: String = "https://www.youtube.com/") {
-        guard let url = Self.youtubeURL(input) else {
-            status = "httpsのYouTube URLを入力してください。"
-            return
-        }
-        showBrowser()
-        webView.load(URLRequest(url: url))
-    }
-
     func showBrowser() {
         presentationRevision += 1
         isWallpaper = false
