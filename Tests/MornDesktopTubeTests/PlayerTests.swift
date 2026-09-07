@@ -5,6 +5,72 @@ import WebKit
 
 final class PlayerTests: XCTestCase {
     @MainActor
+    func testLastVideoRestoresWithoutDashboard() async throws {
+        _ = NSApplication.shared
+        let suite = "MornDesktopTube.restore-test.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let fixture = try Data(contentsOf: XCTUnwrap(Bundle.module.url(forResource: "blue", withExtension: "mp4", subdirectory: "Fixtures")))
+        let html = """
+            <div id="movie_player"><video muted playsinline loop src="data:video/mp4;base64,\(fixture.base64EncodedString())"></video></div>
+            <script>window.videoID = 'remember001'; document.querySelector('#movie_player').getVideoData = () => ({video_id: window.videoID});</script>
+            """
+        var original: PlayerController? = PlayerController(dataStore: .nonPersistent(), preferences: preferences)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
+            styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = original?.browserContainer
+        window.orderBack(nil)
+        defer { window.close() }
+        original?.setVolume(0)
+        original?.webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com/watch?v=remember001"))
+        for _ in 0..<100 {
+            if (try? await original?.webView.evaluateJavaScript("document.querySelector('video').readyState >= 2")) as? Bool == true { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNil(preferences.string(forKey: "lastVideoID"), "Merely opening a video must not replace the last played video")
+        _ = try await original?.webView.evaluateJavaScript("document.querySelector('video').play(); true")
+        for _ in 0..<100 {
+            if preferences.string(forKey: "lastVideoID") == "remember001" { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(preferences.string(forKey: "lastVideoID"), "remember001", "Playback events must save without dashboard polling")
+        _ = try await original?.webView.evaluateJavaScript("""
+            document.querySelector('#movie_player').classList.add('ad-showing'); window.videoID = 'advert00001';
+            document.querySelector('video').dispatchEvent(new Event('timeupdate'));
+            """)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(preferences.string(forKey: "lastVideoID"), "remember001", "Ads must not overwrite the saved video")
+        await original?.stop()
+        original = nil
+        window.contentView = nil
+
+        let restored = PlayerController(dataStore: .nonPersistent(), preferences: preferences)
+        restored.setVolume(0)
+        defer { restored.wallpaper?.close() }
+        let capture = StartupNavigationCapture()
+        restored.webView.navigationDelegate = capture
+        for _ in 0..<100 {
+            if capture.url != nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(capture.url?.absoluteString, "https://www.youtube.com/watch?v=remember001", "Startup must load the saved video, not the homepage")
+        restored.webView.navigationDelegate = restored
+        restored.webView.loadHTMLString(html, baseURL: capture.url ?? URL(string: "https://www.youtube.com/"))
+        for _ in 0..<100 {
+            if restored.isWallpaper && !restored.isPaused && restored.currentTime > 0.1 { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(restored.isWallpaper, "Restored video must appear behind the desktop")
+        XCTAssertFalse(restored.isPaused)
+        XCTAssertGreaterThan(restored.currentTime, 0.1, "Restored playback must actually advance")
+        await restored.stop()
+        preferences.set("https://example.com/", forKey: "lastVideoID")
+        let invalid = PlayerController(dataStore: .nonPersistent(), preferences: preferences)
+        XCTAssertNil(invalid.webView.url, "Invalid stored IDs must not trigger navigation")
+    }
+
+    @MainActor
     func testRepeatPlaybackAndPersistence() async throws {
         _ = NSApplication.shared
         let suite = "MornDesktopTube.repeat-test.\(UUID().uuidString)"
@@ -70,6 +136,7 @@ final class PlayerTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(600))
         let ended = try await flag("document.querySelector('video').ended")
         XCTAssertTrue(ended, "Turning repeat off must restore normal playback completion")
+        preferences.removeObject(forKey: "lastVideoID")
         XCTAssertFalse(PlayerController(dataStore: .nonPersistent(), preferences: preferences).isRepeating)
         controller.setRepeating(true)
         _ = try await webView.evaluateJavaScript("""
@@ -87,7 +154,10 @@ final class PlayerTests: XCTestCase {
     @MainActor
     func testDashboardSizeIsStableAcrossUpdateStates() {
         _ = NSApplication.shared
-        let controller = PlayerController(dataStore: .nonPersistent())
+        let suite = "MornDesktopTube.dashboard-test.\(UUID().uuidString)"
+        let preferences = UserDefaults(suiteName: suite)!
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let controller = PlayerController(dataStore: .nonPersistent(), preferences: preferences)
         let states: [Updater.State] = [.idle, .checking, .upToDate, .available("v999.999.999"),
             .updating, .updated, .failed("更新を確認できませんでした。通信状態を確認してください。"), .idle]
         var initial: NSSize?
@@ -105,8 +175,11 @@ final class PlayerTests: XCTestCase {
     @MainActor
     func testInternalPlaybackVolumeBackgroundAndStop() async throws {
         _ = NSApplication.shared
-        XCTAssertTrue(PlayerController().webView.configuration.websiteDataStore.isPersistent)
-        let controller = PlayerController(dataStore: .nonPersistent())
+        let suite = "MornDesktopTube.playback-test.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { preferences.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(PlayerController(preferences: preferences).webView.configuration.websiteDataStore.isPersistent)
+        let controller = PlayerController(dataStore: .nonPersistent(), preferences: preferences)
         let webView = controller.webView
         let screen = try XCTUnwrap(NSScreen.screens.first)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
@@ -241,7 +314,10 @@ final class PlayerTests: XCTestCase {
         XCTAssertEqual(DashboardView.timeLabel(3661), "1:01:01")
         XCTAssertEqual(DashboardView.timeLabel(.infinity), "--:--")
         XCTAssertEqual(DashboardView.timeLabel(nil), "--:--")
-        let host = NSHostingView(rootView: DashboardView(controller: PlayerController(dataStore: .nonPersistent()))
+        let suite = "MornDesktopTube.url-test.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let host = NSHostingView(rootView: DashboardView(controller: PlayerController(dataStore: .nonPersistent(), preferences: preferences))
             .background(Color(nsColor: .windowBackgroundColor)))
         host.setFrameSize(host.fittingSize)
         host.layoutSubtreeIfNeeded()
@@ -252,5 +328,15 @@ final class PlayerTests: XCTestCase {
         let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent(".build/dashboard-preview.png")
         try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: output)
+    }
+}
+
+@MainActor
+private final class StartupNavigationCapture: NSObject, WKNavigationDelegate {
+    var url: URL?
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        url = navigationAction.request.url
+        decisionHandler(.cancel)
     }
 }

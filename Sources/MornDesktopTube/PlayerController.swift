@@ -32,6 +32,7 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     private var addressObservation: NSKeyValueObservation?
     private var settingsRevision = 0
     private var presentationRevision = 0
+    private var restoringVideoID: String?
 
     init(dataStore: WKWebsiteDataStore? = nil, preferences: UserDefaults = .standard) {
         self.preferences = preferences
@@ -45,6 +46,9 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
             source: PlayerScript.source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
+        let messages = PlaybackMessages()
+        messages.controller = self
+        configuration.userContentController.add(messages, name: "playback")
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -54,6 +58,11 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
         }
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        if let track = VideoTrack(["id": preferences.string(forKey: "lastVideoID") ?? ""]) {
+            restoringVideoID = track.id
+            presentWallpaper()
+            webView.load(URLRequest(url: URL(string: "https://www.youtube.com/watch?v=\(track.id)")!))
+        }
     }
 
     static func youtubeURL(_ input: String) -> URL? {
@@ -69,6 +78,7 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     func showBrowser() {
+        restoringVideoID = nil
         presentationRevision += 1
         isWallpaper = false
         wallpaper?.orderOut(nil)
@@ -96,10 +106,15 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
         let current = presentationRevision
         await refreshPlayback()
         guard current == presentationRevision else { return }
-        guard hasVideo, let screen = targetScreen else {
+        guard hasVideo else {
             status = "アプリ内のYouTubeで動画を開いてください。"
             return
         }
+        presentWallpaper()
+    }
+
+    private func presentWallpaper() {
+        guard let screen = targetScreen else { return }
         if wallpaper == nil { wallpaper = WallpaperWindow(screen: screen) }
         guard let container = wallpaper?.contentView else { return }
         isWallpaper = true
@@ -112,6 +127,7 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     func stop() async {
+        restoringVideoID = nil
         presentationRevision += 1
         let current = presentationRevision
         isWallpaper = false
@@ -223,6 +239,32 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
         canNext = hasVideo && (state["canNext"] as? Bool == true)
         playerCanPrevious = state["canPrevious"] as? Bool == true
         canPrevious = hasVideo && state["adPlaying"] as? Bool != true && (playerCanPrevious || previousHistoryItem != nil)
+        if hasVideo, !paused, state["adPlaying"] as? Bool == false, let track = currentTrack,
+           preferences.string(forKey: "lastVideoID") != track.id {
+            preferences.set(track.id, forKey: "lastVideoID")
+        }
+    }
+
+    fileprivate func playbackChanged(_ message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame,
+              let url = message.frameInfo.request.url, Self.youtubeURL(url.absoluteString) != nil else { return }
+        updatePlayback(message.body)
+        guard hasVideo, let id = restoringVideoID, currentTrack?.id == id,
+              (message.body as? [String: Any])?["adPlaying"] as? Bool == false else { return }
+        restoringVideoID = nil
+        let revision = presentationRevision
+        Task { [weak self] in
+            guard let self, revision == self.presentationRevision else { return }
+            guard self.isWallpaper else { return }
+            do {
+                _ = try await self.webView.callAsyncJavaScript("""
+                    if (window.mornDesktopTube.state().currentTrack?.id === expectedID) {
+                        const v = document.querySelector('#movie_player video, video');
+                        if (v?.paused) await v.play();
+                    }
+                    """, arguments: ["expectedID": id], in: nil, contentWorld: .page)
+            } catch { self.status = "自動再生できませんでした。再生ボタンを押してください。" }
+        }
     }
 
     private func clearPlayback() {
@@ -301,5 +343,13 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = navigationAction.request.url, Self.isSecureNavigation(url) { webView.load(navigationAction.request) }
         return nil
+    }
+}
+
+@MainActor
+private final class PlaybackMessages: NSObject, WKScriptMessageHandler {
+    weak var controller: PlayerController?
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        controller?.playbackChanged(message)
     }
 }

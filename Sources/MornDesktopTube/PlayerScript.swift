@@ -118,6 +118,11 @@ enum PlayerScript {
           return this.state();
         }
       };
+      const reportPlayback = () => window.webkit?.messageHandlers.playback?.postMessage(window.mornDesktopTube.state());
+      for (const event of ['loadedmetadata', 'playing', 'pause', 'timeupdate']) {
+        document.addEventListener(event, reportPlayback, true);
+      }
+      reportPlayback();
       document.addEventListener('loadedmetadata', apply, true);
       document.addEventListener('durationchange', applyRepeat, true);
       document.addEventListener('volumechange', apply, true);
