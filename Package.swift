@@ -7,6 +7,6 @@ let package = Package(
     products: [.executable(name: "MornDesktopTube", targets: ["MornDesktopTube"])],
     targets: [
         .executableTarget(name: "MornDesktopTube"),
-        .testTarget(name: "MornDesktopTubeTests", dependencies: ["MornDesktopTube"])
+        .testTarget(name: "MornDesktopTubeTests", dependencies: ["MornDesktopTube"], resources: [.copy("Fixtures")])
     ]
 )
