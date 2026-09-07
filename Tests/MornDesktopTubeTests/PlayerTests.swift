@@ -61,9 +61,8 @@ final class PlayerTests: XCTestCase {
         XCTAssertTrue(wallpaper.collectionBehavior.contains(.canJoinAllSpaces))
         let hidden = try await webView.evaluateJavaScript("getComputedStyle(document.querySelector('nav')).visibility") as? String
         XCTAssertEqual(hidden, "hidden")
-        controller.fillScreen = true
         let fit = try await webView.evaluateJavaScript("getComputedStyle(document.querySelector('video')).objectFit") as? String
-        XCTAssertEqual(fit, "cover")
+        XCTAssertEqual(fit, "contain")
         await controller.stop()
         XCTAssertFalse(controller.isWallpaper)
         XCTAssertTrue(webView.superview === controller.browserContainer)

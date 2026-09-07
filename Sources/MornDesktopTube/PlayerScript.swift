@@ -3,7 +3,7 @@ enum PlayerScript {
     static let source = #"""
     (() => {
       if (!['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(location.hostname)) return;
-      const settings = { volume: 0, background: false, fill: false };
+      const settings = { volume: 0, background: false };
       const video = () => document.querySelector('#movie_player video, video');
       let configuredVideo = null;
       const style = document.createElement('style');
@@ -28,12 +28,10 @@ enum PlayerScript {
           position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important;
           object-fit: contain !important;
         }
-        html[data-mdt-fill="true"][data-mdt-background="true"] #movie_player video { object-fit: cover !important; }
       `;
       document.documentElement.appendChild(style);
       function apply() {
         document.documentElement.dataset.mdtBackground = String(settings.background);
-        document.documentElement.dataset.mdtFill = String(settings.fill);
         const v = video();
         if (v) {
           if (v.volume !== settings.volume) v.volume = settings.volume;

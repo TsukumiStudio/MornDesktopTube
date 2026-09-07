@@ -11,7 +11,6 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
     @Published private(set) var status = "アプリ内のYouTubeで動画を選んでください。"
     @Published private(set) var pageAddress = ""
     @Published private(set) var volume = 50.0
-    @Published var fillScreen = false { didSet { configurePlayer() } }
     @Published var screenID: CGDirectDisplayID = 0 { didSet { moveWallpaper() } }
     @Published private(set) var screens = NSScreen.screens
     let webView: WKWebView
@@ -154,7 +153,7 @@ final class PlayerController: NSObject, ObservableObject, WKNavigationDelegate, 
         settingsRevision += 1
         let current = settingsRevision
         guard webView.url != nil else { return }
-        let script = "window.mornDesktopTube?.configure({volume: \(volume / 100), background: \(isWallpaper), fill: \(fillScreen)}) ?? null"
+        let script = "window.mornDesktopTube?.configure({volume: \(volume / 100), background: \(isWallpaper)}) ?? null"
         webView.evaluateJavaScript(script) { [weak self] result, _ in
             guard let self, current == self.settingsRevision else { return }
             self.updatePlayback(result)

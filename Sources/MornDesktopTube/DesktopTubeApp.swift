@@ -66,8 +66,6 @@ struct DashboardView: View {
                         Text(screen.localizedName).tag(PlayerController.displayID(screen))
                     }
                 }
-                Toggle("画面いっぱいに拡大", isOn: $controller.fillScreen)
-                    .help("映像の端が切れる場合があります")
             }
             Text("ログイン情報はアプリ専用に保持します。Google側の制限でログインできない場合があります。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
