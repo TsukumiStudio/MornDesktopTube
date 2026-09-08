@@ -78,6 +78,11 @@ enum PlayerScript {
       function apply() {
         document.documentElement.dataset.mdtBackground = String(settings.background);
         const v = video();
+        // Keep YouTube's own volume state in sync, or it re-applies its saved level (a burst) on ads and navigation.
+        const p = player();
+        const level = Math.round(settings.volume * 100);
+        if (p?.setVolume && p.getVolume?.() !== level) p.setVolume(level);
+        if (p?.isMuted && p.isMuted() !== (level === 0)) (level === 0 ? p.mute : p.unMute)?.call(p);
         if (v) {
           if (v.volume !== settings.volume) v.volume = settings.volume;
           if (v.muted !== (settings.volume === 0)) v.muted = settings.volume === 0;
