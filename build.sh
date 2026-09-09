@@ -11,6 +11,8 @@ app_path="$PWD/dist/MornDesktopTube.app"
 mkdir -p "$app_path/Contents/MacOS"
 cp "$binary_dir/MornDesktopTube" "$app_path/Contents/MacOS/MornDesktopTube"
 cp Support/Info.plist "$app_path/Contents/Info.plist"
+mkdir -p "$app_path/Contents/Resources"
+cp Support/AppIcon.icns "$app_path/Contents/Resources/AppIcon.icns"
 if [[ -n "${VERSION:-}" ]]; then
     [[ "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || { print -u2 'Invalid VERSION'; exit 1; }
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$app_path/Contents/Info.plist"
